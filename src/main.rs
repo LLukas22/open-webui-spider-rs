@@ -18,6 +18,7 @@ use axum::{
     Router,
     extract::{Json, State},
     response::IntoResponse,
+    http::StatusCode,
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -71,11 +72,41 @@ struct ApiDoc;
     get,
     path = "/health",
     responses(
-        (status = 200, description = "Health check passed", body = String)
+        (status = 200, description = "Health check passed", body = String),
+        (status = 503, description = "Chromium unreachable", body = String)
     )
 )]
-async fn health_check() -> impl IntoResponse {
-    "OK"
+async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let chrome_connection_url = match &state.settings.chrome_connection_url {
+        Some(url) => url.as_str(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Chromium connection URL not configured",
+            )
+        }
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Failed to initialize HTTP client",
+            )
+        }
+    };
+
+    match client.get(chrome_connection_url).send().await {
+        Ok(resp) if resp.status().is_success() => (StatusCode::OK, "OK"),
+        _ => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Chromium instance unreachable",
+        ),
+    }
 }
 
 async fn scrape_website(website: &Website) -> Vec<spider::page::Page> {
