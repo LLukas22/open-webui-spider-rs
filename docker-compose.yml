@@ -1,0 +1,16 @@
+services:
+  spider:
+    build: .
+    container_name: open-webui-spider-rs
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+      - CHROME_CONNECTION_URL=http://headless-chrome:9222
+    depends_on:
+      - headless-chrome
+  headless-chrome:
+    image: ghcr.io/llukas22/headless-browser-playwright:latest
+    container_name: headless-chrome
+    ports:
+      - "9222:9222"
