@@ -73,7 +73,7 @@ jobs:
             type=sha,prefix=sha-
             type=ref,event=branch
             type=ref,event=pr
-            type=ref,event=release
+            type=ref,event=tag
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       - name: Build and push

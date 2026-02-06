@@ -17,14 +17,14 @@ use std::time::Duration;
 use axum::{
     Router,
     extract::{Json, State},
-    response::IntoResponse,
     http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
 };
+use config::Config;
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
-use config::Config;
 
 #[derive(Clone, Deserialize)]
 struct Settings {
@@ -83,7 +83,7 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Chromium connection URL not configured",
-            )
+            );
         }
     };
 
@@ -96,7 +96,7 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Failed to initialize HTTP client",
-            )
+            );
         }
     };
 
@@ -126,9 +126,14 @@ async fn scrape_website(website: &Website) -> Vec<spider::page::Page> {
     pages
 }
 
-async fn crawl_page(url: &str, chrome_connection_url: &Option<String>) -> anyhow::Result<(String, String)> {
-    let conf = content::TransformConfig { return_format: content::ReturnFormat::Markdown, ..Default::default() };
-
+async fn crawl_page(
+    url: &str,
+    chrome_connection_url: &Option<String>,
+) -> anyhow::Result<(String, String)> {
+    let conf = content::TransformConfig {
+        return_format: content::ReturnFormat::Markdown,
+        ..Default::default()
+    };
 
     let mut interception = RequestInterceptConfiguration::new(true);
     let mut tracker = ChromeEventTracker::default();
@@ -191,7 +196,10 @@ async fn crawl_page(url: &str, chrome_connection_url: &Option<String>) -> anyhow
         (status = 200, description = "Crawl successful", body = Vec<CrawlResponse>)
     )
 )]
-async fn crawl_handler(State(state): State<AppState>, Json(payload): Json<CrawlRequest>) -> impl IntoResponse {
+async fn crawl_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<CrawlRequest>,
+) -> impl IntoResponse {
     let mut set = tokio::task::JoinSet::new();
     let chrome_connection_url = state.settings.chrome_connection_url.clone();
 
@@ -237,7 +245,10 @@ async fn main() -> anyhow::Result<()> {
 
     let settings = Config::builder()
         .add_source(config::Environment::with_prefix("APP"))
-        .set_default("chrome_connection_url", "http://127.0.0.1:9222/json/version")?
+        .set_default(
+            "chrome_connection_url",
+            "http://127.0.0.1:9222/json/version",
+        )?
         .build()
         .unwrap();
 
