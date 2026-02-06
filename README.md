@@ -15,7 +15,8 @@ services:
       - "8080:8080"
     environment:
       - RUST_LOG=info
-      - CHROME_CONNECTION_URL=http://headless-chrome:9222
+      - APP_CHROME_CONNECTION_URL=http://headless-chrome:9222/json/version
+      - APP_PORT=8080
     depends_on:
       - headless-chrome
 

@@ -8,28 +8,32 @@ use axum::{
 };
 use config::Config;
 use env_logger::Env;
-use log::{info, warn};
+use log::{error, info, warn};
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
-use spider::configuration::{ChromeEventTracker, Fingerprint};
+use reqwest::header::HOST;
 use spider::features::chrome_common::{
     RequestInterceptConfiguration, WaitForDelay, WaitForIdleNetwork, WaitForSelector,
 };
 use spider::features::chrome_viewport;
 use spider::tokio;
 use spider::website::Website;
+use spider::{
+    configuration::{ChromeEventTracker, Fingerprint}
+};
 use spider_transformations::transformation::content;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Debug)]
 struct Settings {
     chrome_connection_url: Option<String>,
+    chrome_health_host_header: Option<String>,
     cache_ttl_seconds: u64,
     cache_max_entries: u64,
-    server_port: u16,
+    port: u16,
 }
 
 #[derive(Clone)]
@@ -96,12 +100,34 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
         }
     };
 
-    match state.http_client.get(chrome_connection_url).send().await {
-        Ok(resp) if resp.status().is_success() => (StatusCode::OK, "OK"),
-        _ => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Chromium instance unreachable",
-        ),
+    let mut request = state.http_client.get(chrome_connection_url);
+
+    if let Some(host_header) = &state.settings.chrome_health_host_header {
+        request = request.header(HOST, host_header);
+    }
+
+    match request.send().await {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                (StatusCode::OK, "OK")
+            } else {
+                error!(
+                    "Health check failed: Received non-success status code {}",
+                    resp.status()
+                );
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Chromium instance unreachable",
+                )
+            }
+        }
+        Err(e) => {
+            error!("Health check failed: {}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Chromium instance unreachable",
+            )
+        }
     }
 }
 
@@ -266,13 +292,15 @@ async fn main() -> Result<()> {
         )?
         .set_default("cache_ttl_seconds", 600_u64)?
         .set_default("cache_max_entries", 1000_u64)?
-        .set_default("server_port", 8080_u16)?
+        .set_default("port", 8080_u16)?
         .build()
         .context("Failed to build configuration")?;
 
     let settings: Settings = settings
         .try_deserialize()
         .context("Failed to deserialize settings")?;
+
+    info!("Configuration loaded: {:?}", settings);
 
     if settings.cache_ttl_seconds == 0 {
         warn!("Cache TTL is set to 0; caching is effectively disabled.");
@@ -291,7 +319,7 @@ async fn main() -> Result<()> {
         .max_capacity(settings.cache_max_entries)
         .build();
 
-    let port = settings.server_port;
+    let port = settings.port;
 
     let state = AppState {
         settings,
